@@ -1,6 +1,13 @@
 // OpenWeatherMap API key storage
 const STORAGE_KEY = 'owm_api_key';
-let API_KEY = localStorage.getItem(STORAGE_KEY) || '';
+let API_KEY = '';
+
+// Try to get from localStorage, but handle if blocked
+try {
+    API_KEY = localStorage.getItem(STORAGE_KEY) || '';
+} catch (e) {
+    console.warn('localStorage not available:', e);
+}
 
 // City codes for Environment Canada
 const CITY_CODES = {
@@ -28,7 +35,7 @@ const WEATHER_ICONS = {
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js')
         .then(reg => console.log('Service Worker registered'))
-        .catch(err => console.log('Service Worker registration failed'));
+        .catch(err => console.log('Service Worker registration failed:', err));
 }
 
 // PWA install prompt
@@ -83,20 +90,34 @@ async function fetchWeather() {
         showContent();
     } catch (error) {
         console.error('Error:', error);
-        showError('Failed to load weather data. Please try again.');
+        showError('Failed to load weather data. Please try again. Error: ' + error.message);
     }
 }
 
-// Fetch Environment Canada data
+// Fetch Environment Canada data with CORS proxy
 async function fetchEnvironmentCanada(cityCode) {
+    // Use CORS proxy to avoid CORS issues
     const url = `https://dd.weather.gc.ca/citypage_weather/xml/ON/${cityCode}_e.xml`;
-    const response = await fetch(url);
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
     
-    if (!response.ok) throw new Error('Failed to fetch EC data');
+    console.log('Fetching from:', url);
+    console.log('Using proxy:', proxyUrl);
+    
+    const response = await fetch(proxyUrl);
+    
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
     
     const xmlText = await response.text();
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlText, 'text/xml');
+    
+    // Check for XML parsing errors
+    const parseError = xml.querySelector('parsererror');
+    if (parseError) {
+        throw new Error('XML parsing error: ' + parseError.textContent);
+    }
     
     return parseEnvironmentCanadaXML(xml);
 }
@@ -364,7 +385,11 @@ function saveAPIKey() {
     const input = document.getElementById('apiKeyInput');
     API_KEY = input.value.trim();
     if (API_KEY) {
-        localStorage.setItem(STORAGE_KEY, API_KEY);
+        try {
+            localStorage.setItem(STORAGE_KEY, API_KEY);
+        } catch (e) {
+            console.warn('Could not save to localStorage:', e);
+        }
         fetchWeather();
     }
 }
